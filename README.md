@@ -1,1 +1,4 @@
 # AdaptiveDensityApproximation
+
+
+# PROJECT TO REWRITE ADAPTIVE DENSITY APPROX PAPER
