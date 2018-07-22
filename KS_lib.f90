@@ -7,12 +7,12 @@
 	    parameter  (IDX_STY = 1 )
 	    double precision :: X(N),X_L(N),X_U(N)
 	    double precision :: G_L(M),G_U(M)
-        double precision :: DAT(2*k_size+znum+7)
-        integer :: IDAT(3)
+        double precision :: DAT((znum+1)*k_size+2*znum+7)
+        integer :: IDAT(4)
 
 
 	    data X   / 10d0 /
-	    data X_L / 0d0 /
+	    data X_L /  0d0 /
 	    data X_U / 100d0 /
 
         !  Set bounds for the constraints
@@ -26,18 +26,21 @@
 ! =============================================================================
 !                    Computation of data vectors
 ! =============================================================================
-        subroutine data_vectors(DAT,IDAT,K_GRID,K_POL,alpha,delta, sigma, beta,Z,L,K1_agg,pr_vec,k_size,znum,ii)
+        subroutine data_vectors(DAT,IDAT,K_GRID,K_POL,alpha,delta, sigma, beta,Z,L,K1_agg,pr_vec,L_VEC,k_size,znum,ii,jj)
             integer, intent(in) :: k_size, ii, znum
-            integer :: IDAT(3)
-            double precision :: DAT(2*k_size + znum  + 7)
-            double precision :: K_GRID(k_size), K_POL(k_size), pr_vec(znum)
+            integer :: IDAT(4)
+            double precision :: DAT((znum+1)*k_size+2*znum+7)
+            double precision :: K_GRID(k_size), K_POL(k_size,znum), K_POLS(k_size*znum), pr_vec(znum), L_VEC(znum)
             double precision :: alpha, delta, sigma, beta, Z, L, K1_agg, K_SS
             double precision :: R, W, R1, W1
 
-            IDAT(1) = ii
+            IDAT(1) = ii ! position over K grid
             IDAT(2) = k_size
             IDAT(3) = znum
-            K_SS =  K_GRID(IDAT(1))
+            IDAT(4) = jj ! position over z grid
+            K_SS =  K_GRID(25)  ! IDAT(1)
+
+            K_POLS = reshape(K_POL,(/k_size*znum/))
 
             call int_rate(R,alpha,Z, K_SS,L)
             call wage(W,alpha,Z, K_SS,L)
@@ -45,15 +48,16 @@
             call wage(W1,alpha,Z,K1_agg,L)
 
             DAT(1:k_size) = K_GRID
-            DAT(k_size+1:2*k_size) = K_POL
-            DAT(2*k_size+1) = R
-            DAT(2*k_size+2) = W
-            DAT(2*k_size+3) = R1
-            DAT(2*k_size+4) = W1
-            DAT(2*k_size+5) = delta
-            DAT(2*k_size+6) = sigma
-            DAT(2*k_size+7) = beta
-            DAT(2*k_size+7 +1: 2*k_size+7 + 1 +znum) = pr_vec
+            DAT(k_size+1:(znum+1)*k_size) = K_POLS
+            DAT((znum+1)*k_size+1) = R
+            DAT((znum+1)*k_size+2) = W
+            DAT((znum+1)*k_size+3) = R1
+            DAT((znum+1)*k_size+4) = W1
+            DAT((znum+1)*k_size+5) = delta
+            DAT((znum+1)*k_size+6) = sigma
+            DAT((znum+1)*k_size+7) = beta
+            DAT((znum+1)*k_size+7 +1: (znum+1)*k_size+7  +znum) = pr_vec
+            DAT((znum+1)*k_size+7 +1 + znum :  (znum+1)*k_size+7 + 2*znum) = L_VEC
 
 
         end
@@ -106,29 +110,49 @@
       integer :: N, NEW_X, M
       double precision :: G(M), X(N)
       double precision :: DAT(*)
-      integer :: IDAT(*), k_size
-      integer :: IERR, POS, NUM
+      integer :: IDAT(*), ZNUM
+      integer :: IERR, POS, ZPOS, NUM, i
       double precision :: SIGMA, KAPPA, K_TILDE, K_INT(1)
-      double precision :: K_GRID(30),K_POL(30)
-      double precision :: R,W,R1,W1, delta, beta,  u_prime
-!     inputs:
+      double precision, allocatable :: K_GRID(:),K_POL(:,:),K_POLS(:)
+      double precision, allocatable :: PR_VEC(:), L_VEC(:)
+      double precision :: R,W,R1,W1, delta, beta, u_prime, UPRIME
+
+      !  inputs:
         POS = IDAT(1)
         NUM = IDAT(2)
+        ZNUM = IDAT(3)
+        ZPOS = IDAT(4)
+
+        allocate(PR_VEC(ZNUM),L_VEC(ZNUM))
+        allocate(K_GRID(NUM),K_POLS(NUM*ZNUM),K_POL(NUM,ZNUM))
+
         K_GRID = DAT(1:NUM)
-        K_POL = DAT(NUM+1:2*NUM)
-        R = DAT(2*NUM + 1)
-        W = DAT(2*NUM + 2)
-        R1 = DAT(2*NUM + 3)
-        W1 = DAT(2*NUM + 4)
-        delta = DAT(2*NUM + 5)
-        sigma = DAT(2*NUM + 6)
-        beta = DAT(2*NUM + 7)
+        K_POLS = DAT(NUM+1:(ZNUM+1)*NUM)
+        R = DAT((ZNUM+1)*NUM + 1)
+        W = DAT((ZNUM+1)*NUM + 2)
+        R1 = DAT((ZNUM+1)*NUM + 3)
+        W1 = DAT((ZNUM+1)*NUM + 4)
+        delta = DAT((ZNUM+1)*NUM + 5)
+        sigma = DAT((ZNUM+1)*NUM + 6)
+        beta = DAT((ZNUM+1)*NUM + 7)
+        PR_VEC = DAT((ZNUM+1)*NUM+7 + 1 : (ZNUM+1)*NUM+7 + ZNUM)
+        L_VEC = DAT( (ZNUM+1)*NUM+7 + ZNUM + 1 :  (ZNUM+1)*NUM+7 + 2*ZNUM)
 
-        call pwl_value_1d ( NUM, K_GRID, K_POL, 1, X, K_INT )
+        K_POL = reshape(K_POLS,(/NUM,ZNUM/))
 
-        K_TILDE = K_INT(1)
-        G(1) = u_prime((1-delta+R)*K_GRID(POS) + W - X, sigma) - &
-                & beta*(1-delta+R1)*u_prime( W1 + (1-delta+R1)*X - K_TILDE  , sigma)
+
+        UPRIME = 0.0
+        do i=1,ZNUM
+            call pwl_value_1d ( NUM, K_GRID, K_POL(:,i), 1, X, K_INT )
+            K_TILDE = K_INT(1)
+            UPRIME = UPRIME + PR_VEC(i)*u_prime( L_VEC(i)*W1 + (1-delta+R1)*X - K_TILDE  , sigma)
+        end do
+
+        G =  u_prime((1-delta+R)*K_GRID(POS) + W*L_VEC(ZPOS) - X, sigma) -  &
+               & beta*(1-delta+R1)*UPRIME
+      !u_prime( W1*L_VEC(ZPOS) + (1-delta+R1)*X - K_TILDE  , sigma)
+
+
       IERR = 0
       return
       end

@@ -1,20 +1,20 @@
 module KS_econ
 implicit none
-    integer, parameter :: k_size = 30, ni = 1
-    double precision :: K_FUN(k_size) , K_GRID(k_size), K_POL(k_size)
-    double precision :: K_POL_STORE(k_size)
-    double precision, parameter :: k_min = 0.d0, k_max = 22.d0
+    integer, parameter :: k_size = 40, ni = 1
+    integer, parameter :: znum = 2
+    double precision :: K_FUN(k_size) , K_GRID(k_size), K_POL(k_size,znum)
+    double precision :: K_POL_STORE(k_size,znum)
+    double precision, parameter :: k_min = 0.d0, k_max = 20.d0
     double precision, parameter :: beta = 0.99 ! discount rate
-    double precision, parameter :: alpha = 0.3 ! capital share in C.D. production function
+    double precision, parameter :: alpha = 0.36 ! capital share in C.D. production function
     double precision, parameter :: delta = 0.03 ! capital depreciation
-    double precision, parameter :: sigma = 1 ! IES / risk aversion parameter
-    double precision, parameter :: Z = 1.5 ! aggregate TFP parameter
+    double precision, parameter :: sigma = 1.0 ! IES / risk aversion parameter
+    double precision, parameter :: Z = 1.0 ! aggregate TFP parameter
     double precision :: xi(1), yi(1), K_SS(1), L, R, W, K1_agg(1), R1, W1
 
-    integer, parameter :: znum = 3
-    double precision, parameter :: rhoz = 0.65 ! serial corr of idiosync shocks
+    double precision, parameter :: rhoz = 0.85 ! serial corr of idiosync shocks
     double precision, parameter :: nstdevz = 1.0  ! stuff for tauchen
-    double precision, parameter :: sigmaz = 0.13 ! std of unc shocks
+    double precision, parameter :: sigmaz = 0.075 ! std of unc shocks
 
     double precision :: pr_mat_z(znum,znum), z0(znum), L_z(znum)
 
@@ -148,8 +148,8 @@ implicit none
 !input/output declarations
 double precision :: c, gamma
 
-!other declarations
 
+!other declarations
     if (gamma .eq. 1.0) then
         u_prime = 1/c
         else
