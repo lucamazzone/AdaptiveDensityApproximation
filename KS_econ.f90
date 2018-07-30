@@ -1,22 +1,33 @@
 module KS_econ
 implicit none
-    integer, parameter :: k_size = 40, ni = 1
-    integer, parameter :: znum = 2
+    integer, parameter :: k_size = 41, ni = 1, n_agents = 2000, n_sim = 151
+    integer, parameter :: znum = 2, Lnum = 2
+    integer, parameter :: n_cheb = k_size-1 !k_size-1
+    integer, parameter :: reg_dim = 3
+    integer :: Lstat_index(Lnum,n_sim+1)
     double precision :: K_FUN(k_size) , K_GRID(k_size), K_POL(k_size,znum)
     double precision :: K_POL_STORE(k_size,znum)
-    double precision, parameter :: k_min = 0.d0, k_max = 20.d0
+    double precision, parameter :: k_min = 0.d0, k_max = 22.d0
     double precision, parameter :: beta = 0.99 ! discount rate
     double precision, parameter :: alpha = 0.36 ! capital share in C.D. production function
     double precision, parameter :: delta = 0.03 ! capital depreciation
     double precision, parameter :: sigma = 1.0 ! IES / risk aversion parameter
-    double precision, parameter :: Z = 1.0 ! aggregate TFP parameter
-    double precision :: xi(1), yi(1), K_SS(1), L, R, W, K1_agg(1), R1, W1
+    double precision, parameter ::  pi = 3.1415926535  ! greek pi
+    double precision :: Zstate(Lnum) ! aggregate TFP parameter
+    double precision :: xi(1), yi(1), K_SS(1), L, R, W,  K_agg, K1_agg(1), R1, W1
 
-    double precision, parameter :: rhoz = 0.85 ! serial corr of idiosync shocks
+    double precision, parameter :: rhoz = 0.7 ! serial corr of idiosync shocks
     double precision, parameter :: nstdevz = 1.0  ! stuff for tauchen
-    double precision, parameter :: sigmaz = 0.075 ! std of unc shocks
+    double precision, parameter :: sigmaz = 0.075 ! std of idiosync shocks
 
-    double precision :: pr_mat_z(znum,znum), z0(znum), L_z(znum)
+    double precision, parameter :: rhoagg = 0.9 ! serial corr of agg shocks
+    double precision, parameter :: nstdevagg = 1.0  ! stuff for tauchen
+    double precision, parameter :: sigmaagg = 0.075 ! std of agg shocks
+
+
+    double precision :: pr_mat_z(znum,znum), z0(znum), L_z(znum), pr_mat_L(Lnum,Lnum)
+
+
 
     contains
 
@@ -43,7 +54,42 @@ subroutine init(K_SS,beta,delta,alpha)
     K_SS = ((1/beta - (1-delta))/alpha)**(-1/(1-alpha))
 end
 
+! =============================================================================
+!                           CHEBYSHEV INTERPOLATION
+! =============================================================================
 
+! ************************** BASIS FUNCTIONS **************************
+subroutine TMATRIX(Tmat,zz,mm,n)
+    implicit none
+    integer, intent(in) :: mm,n
+    double precision , intent(in) :: zz(n,1)
+    double precision :: Tmat(mm,n)
+    integer :: i,j
+
+    do i=1,n
+        Tmat(1,i) = 1.
+        Tmat(2,i) = zz(i,1)
+        do j = 3,mm
+            Tmat(j,i) =  2.*zz(i,1)*Tmat(j-1,i) - Tmat(j-2,i)
+        end do
+    end do
+end
+! =============================================================================
+!                              OLS REGRESSION
+! =============================================================================
+subroutine OLS(beta,X,y,n,dim)
+    implicit none
+    integer, intent(in) :: n, dim
+    double precision, intent(in) :: X(n,dim), y(n,1)
+    double precision :: beta(dim,1)
+    double precision :: x_prod(dim,dim), x_inv(dim,dim), predict(dim,1)
+
+    x_prod = matmul(transpose(X),X)
+    call inverse(x_prod,x_inv,dim)
+    predict =  matmul(transpose(X),y)
+    beta = matmul(x_inv,predict)
+
+end subroutine OLS
 ! =============================================================================
 !                                   LINSPACE
 ! =============================================================================
@@ -272,3 +318,87 @@ end do !zct
 !convert grid back to z-space
 !z0 = exp(z0)
 end subroutine tauchen
+
+! =============================================================================
+!                      Computation of Inverse
+! =============================================================================
+
+subroutine inverse(a,c,n)
+!============================================================
+! Inverse matrix
+! Method: Based on Doolittle LU factorization for Ax=b
+! Alex G. December 2009
+!-----------------------------------------------------------
+! input ...
+! a(n,n) - array of coefficients for matrix A
+! n      - dimension
+! output ...
+! c(n,n) - inverse matrix of A
+! comments ...
+! the original matrix a(n,n) will be destroyed
+! during the calculation
+!===========================================================
+implicit none
+integer n
+double precision a(n,n), c(n,n)
+double precision L(n,n), U(n,n), b(n), d(n), x(n)
+double precision coeff
+integer i, j, k
+
+! step 0: initialization for matrices L and U and b
+! Fortran 90/95 aloows such operations on matrices
+L=0.0
+U=0.0
+b=0.0
+
+! step 1: forward elimination
+do k=1, n-1
+   do i=k+1,n
+      coeff=a(i,k)/a(k,k)
+      L(i,k) = coeff
+      do j=k+1,n
+         a(i,j) = a(i,j)-coeff*a(k,j)
+      end do
+   end do
+end do
+
+! Step 2: prepare L and U matrices
+! L matrix is a matrix of the elimination coefficient
+! + the diagonal elements are 1.0
+do i=1,n
+  L(i,i) = 1.0
+end do
+! U matrix is the upper triangular part of A
+do j=1,n
+  do i=1,j
+    U(i,j) = a(i,j)
+  end do
+end do
+
+! Step 3: compute columns of the inverse matrix C
+do k=1,n
+  b(k)=1.0
+  d(1) = b(1)
+! Step 3a: Solve Ld=b using the forward substitution
+  do i=2,n
+    d(i)=b(i)
+    do j=1,i-1
+      d(i) = d(i) - L(i,j)*d(j)
+    end do
+  end do
+! Step 3b: Solve Ux=d using the back substitution
+  x(n)=d(n)/U(n,n)
+  do i = n-1,1,-1
+    x(i) = d(i)
+    do j=n,i+1,-1
+      x(i)=x(i)-U(i,j)*x(j)
+    end do
+    x(i) = x(i)/u(i,i)
+  end do
+! Step 3c: fill the solutions x(n) into column k of C
+  do i=1,n
+    c(i,k) = x(i)
+  end do
+  b(k)=0.0
+end do
+end subroutine inverse

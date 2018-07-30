@@ -1,24 +1,23 @@
         module KS_lib
-        use KS_econ
-!       call linspace(bvector,stepb,bmax,vecsize)
-        implicit none
-	    integer     N,     M,     NELE_JAC,     NELE_HESS,      IDX_STY
-	    parameter  (N = 1, M = 1, NELE_JAC = 1, NELE_HESS = 1)
-	    parameter  (IDX_STY = 1 )
-	    double precision :: X(N),X_L(N),X_U(N)
-	    double precision :: G_L(M),G_U(M)
-        double precision :: DAT((znum+1)*k_size+2*znum+7)
-        integer :: IDAT(4)
+            use KS_econ
+            implicit none
+	        integer     N,     M,     NELE_JAC,     NELE_HESS,      IDX_STY
+	        parameter  (N = 1, M = 1, NELE_JAC = 1, NELE_HESS = 1)
+    	    parameter  (IDX_STY = 1 )
+	        double precision :: X(N),X_L(N),X_U(N)
+	        double precision :: G_L(M),G_U(M)
+            double precision :: DAT((znum+2)*k_size+2*znum+ 9 +n_cheb*znum)
+            integer :: IDAT(6)
 
 
-	    data X   / 10d0 /
-	    data X_L /  0d0 /
-	    data X_U / 100d0 /
+    	    data X   / 10d0 /
+	        data X_L /  0d0 /
+	        data X_U / 100d0 /
 
-        !  Set bounds for the constraints
+            !  Set bounds for the constraints
 
-        data G_L / 0d0 /
-	    data G_U / 0d0 /
+            data G_L / 0d0 /
+	        data G_U / 0d0 /
 
         end
 
@@ -26,38 +25,63 @@
 ! =============================================================================
 !                    Computation of data vectors
 ! =============================================================================
-        subroutine data_vectors(DAT,IDAT,K_GRID,K_POL,alpha,delta, sigma, beta,Z,L,K1_agg,pr_vec,L_VEC,k_size,znum,ii,jj)
-            integer, intent(in) :: k_size, ii, znum
-            integer :: IDAT(4)
-            double precision :: DAT((znum+1)*k_size+2*znum+7)
-            double precision :: K_GRID(k_size), K_POL(k_size,znum), K_POLS(k_size*znum), pr_vec(znum), L_VEC(znum)
-            double precision :: alpha, delta, sigma, beta, Z, L, K1_agg, K_SS
+        subroutine data_vectors(DAT,IDAT,K_GRID,K_POL,ZZ,params,znum, &
+        & k_size,n_cheb,L,K_agg,K1_agg,pr_vec,theta,L_VEC,ii,jj,itp,Zstate)
+            implicit none
+            integer, intent(in) :: ii,jj,znum,k_size,n_cheb,itp
+            integer :: IDAT(6), kkk
+            double precision, intent(in) :: params(*),K_GRID(k_size), K_POL(k_size,znum),ZZ(k_size)
+            double precision, intent(in) :: theta(n_cheb,znum),K_agg,Zstate(2)
+            double precision ::  K_POLS(k_size*znum), thetas(n_cheb*znum), pr_vec(znum), L_VEC(znum), k_max, k_min
+            double precision :: DAT((znum+1)*k_size+2*znum+9), alpha, delta, sigma, beta, Z, L, K1_agg, K_SS
             double precision :: R, W, R1, W1
+            double precision ::  T(n_cheb,k_size)
+
+            alpha = params(1)
+            delta = params(2)
+            sigma = params(3)
+            beta = params(4)
+            k_max = params(5)
+            k_min = params(6)
 
             IDAT(1) = ii ! position over K grid
             IDAT(2) = k_size
             IDAT(3) = znum
             IDAT(4) = jj ! position over z grid
-            K_SS =  K_GRID(25)  ! IDAT(1)
+            IDAT(5) = itp ! interpolation type
+            IDAT(6) = n_cheb
+
+            K_SS =  K_agg  ! IDAT(1)
 
             K_POLS = reshape(K_POL,(/k_size*znum/))
+            thetas = reshape(theta,(/n_cheb*znum/))
 
-            call int_rate(R,alpha,Z, K_SS,L)
-            call wage(W,alpha,Z, K_SS,L)
-            call int_rate(R1,alpha,Z,K1_agg,L)
-            call wage(W1,alpha,Z,K1_agg,L)
+            call int_rate(R,alpha,Zstate(1), K_SS,L)
+            call wage(W,alpha,Zstate(1), K_SS,L)
+            call int_rate(R1,alpha,Zstate(2),K1_agg,L)
+            call wage(W1,alpha,Zstate(2),K1_agg,L)
+
+            !if (interp_type.eq.2) then
+            !    ! Chebyshev Basis Functions
+            !    call TMATRIX(T,ZZ,n_cheb,k_size)
+                ! Coeff theta
+            !end if
 
             DAT(1:k_size) = K_GRID
-            DAT(k_size+1:(znum+1)*k_size) = K_POLS
-            DAT((znum+1)*k_size+1) = R
-            DAT((znum+1)*k_size+2) = W
-            DAT((znum+1)*k_size+3) = R1
-            DAT((znum+1)*k_size+4) = W1
-            DAT((znum+1)*k_size+5) = delta
-            DAT((znum+1)*k_size+6) = sigma
-            DAT((znum+1)*k_size+7) = beta
-            DAT((znum+1)*k_size+7 +1: (znum+1)*k_size+7  +znum) = pr_vec
-            DAT((znum+1)*k_size+7 +1 + znum :  (znum+1)*k_size+7 + 2*znum) = L_VEC
+            DAT(     k_size+1    : (znum+1)*k_size) = K_POLS
+            DAT((znum+1)*k_size+1: (znum+2)*k_size) = ZZ
+            DAT((znum+2)*k_size+1) = R
+            DAT((znum+2)*k_size+2) = W
+            DAT((znum+2)*k_size+3) = R1
+            DAT((znum+2)*k_size+4) = W1
+            DAT((znum+2)*k_size+5) = delta
+            DAT((znum+2)*k_size+6) = sigma
+            DAT((znum+2)*k_size+7) = beta
+            DAT((znum+2)*k_size+8) = k_min
+            DAT((znum+2)*k_size+9) = k_max
+            DAT((znum+2)*k_size+9 +1 : (znum+2)*k_size +9  +znum) = pr_vec
+            DAT((znum+2)*k_size+9 +1 + znum :  (znum+2)*k_size+9 + 2*znum) = L_VEC
+            DAT((znum+2)*k_size+9 +2*znum + 1 : (znum+2)*k_size+9 +2*znum + znum*n_cheb ) = thetas
 
 
         end
@@ -111,48 +135,61 @@
       double precision :: G(M), X(N)
       double precision :: DAT(*)
       integer :: IDAT(*), ZNUM
-      integer :: IERR, POS, ZPOS, NUM, i
+      integer :: IERR, POS, ZPOS, NUM, i, interp, n_cheb
       double precision :: SIGMA, KAPPA, K_TILDE, K_INT(1)
-      double precision, allocatable :: K_GRID(:),K_POL(:,:),K_POLS(:)
-      double precision, allocatable :: PR_VEC(:), L_VEC(:)
-      double precision :: R,W,R1,W1, delta, beta, u_prime, UPRIME
+      double precision, allocatable :: K_GRID(:),K_POL(:,:),K_POLS(:), ZZ(:)
+      double precision, allocatable :: PR_VEC(:), L_VEC(:), thetas(:), theta(:,:), TT(:)
+      double precision :: R,W,R1,W1, delta, beta, u_prime, UPRIME, k_min, k_max
 
-      !  inputs:
+        !  inputs:
         POS = IDAT(1)
         NUM = IDAT(2)
         ZNUM = IDAT(3)
         ZPOS = IDAT(4)
+        interp = IDAT(5)
+        n_cheb = IDAT(6)
 
         allocate(PR_VEC(ZNUM),L_VEC(ZNUM))
-        allocate(K_GRID(NUM),K_POLS(NUM*ZNUM),K_POL(NUM,ZNUM))
+        allocate(K_GRID(NUM),K_POLS(NUM*ZNUM),K_POL(NUM,ZNUM),ZZ(NUM))
+        allocate(thetas(n_cheb*ZNUM), theta(n_cheb,ZNUM), TT(n_cheb))
 
         K_GRID = DAT(1:NUM)
         K_POLS = DAT(NUM+1:(ZNUM+1)*NUM)
-        R = DAT((ZNUM+1)*NUM + 1)
-        W = DAT((ZNUM+1)*NUM + 2)
-        R1 = DAT((ZNUM+1)*NUM + 3)
-        W1 = DAT((ZNUM+1)*NUM + 4)
-        delta = DAT((ZNUM+1)*NUM + 5)
-        sigma = DAT((ZNUM+1)*NUM + 6)
-        beta = DAT((ZNUM+1)*NUM + 7)
-        PR_VEC = DAT((ZNUM+1)*NUM+7 + 1 : (ZNUM+1)*NUM+7 + ZNUM)
-        L_VEC = DAT( (ZNUM+1)*NUM+7 + ZNUM + 1 :  (ZNUM+1)*NUM+7 + 2*ZNUM)
+        ZZ = DAT((ZNUM+1)*NUM+1: (ZNUM+2)*NUM)
+        R = DAT((ZNUM+2)*NUM + 1)
+        W = DAT((ZNUM+2)*NUM + 2)
+        R1 = DAT((ZNUM+2)*NUM + 3)
+        W1 = DAT((ZNUM+2)*NUM + 4)
+        delta = DAT((ZNUM+2)*NUM + 5)
+        sigma = DAT((ZNUM+2)*NUM + 6)
+        beta = DAT((ZNUM+2)*NUM + 7)
+        k_min = DAT((ZNUM+2)*NUM + 8)
+        k_max = DAT((ZNUM+2)*NUM + 9)
+        PR_VEC = DAT((ZNUM+2)*NUM+9 + 1 : (ZNUM+2)*NUM+ 9 + ZNUM)
+        L_VEC = DAT( (ZNUM+2)*NUM+9 + ZNUM + 1 :  (ZNUM+2)*NUM+ 9 + 2*ZNUM)
+        thetas = DAT((znum+2)*NUM+9 +2*ZNUM + 1 : (ZNUM+2)*NUM+9 +2*ZNUM + n_cheb*ZNUM )
 
         K_POL = reshape(K_POLS,(/NUM,ZNUM/))
+        theta = reshape(thetas,(/n_cheb,ZNUM/))
 
 
         UPRIME = 0.0
         do i=1,ZNUM
-            call pwl_value_1d ( NUM, K_GRID, K_POL(:,i), 1, X, K_INT )
+            if (interp.eq.1) then
+                call pwl_value_1d ( NUM, K_GRID, K_POL(:,i), 1, X, K_INT )
+            else if (interp .eq. 2) then
+                !call pwl_value_1d ( NUM, K_GRID, K_POL(:,i), 1, X, K_INT )
+                call TMATRIX(TT,2*( X - k_min)/(k_max - k_min) - 1,n_cheb,1)
+                K_INT = dot_product(theta(:,i),TT)
+            end if
             K_TILDE = K_INT(1)
             UPRIME = UPRIME + PR_VEC(i)*u_prime( L_VEC(i)*W1 + (1-delta+R1)*X - K_TILDE  , sigma)
         end do
 
         G =  u_prime((1-delta+R)*K_GRID(POS) + W*L_VEC(ZPOS) - X, sigma) -  &
                & beta*(1-delta+R1)*UPRIME
+
       !u_prime( W1*L_VEC(ZPOS) + (1-delta+R1)*X - K_TILDE  , sigma)
-
-
       IERR = 0
       return
       end
